@@ -7,29 +7,42 @@ use std::io::{ self, Read, Write };
 use std::env;
 use std::str::FromStr;
 use std::fs::File;
+use std::sync::Mutex;
 
 struct StdioDevice {
-    stdin: io::Stdin,
-    stdout: io::Stdout,
+    stdin: Mutex<io::Stdin>,
+    stdout: Mutex<io::Stdout>,
 }
 
 impl StdioDevice {
     fn new() -> StdioDevice {
         StdioDevice {
-            stdin: io::stdin(),
-            stdout: io::stdout()
+            stdin: Mutex::new(io::stdin()),
+            stdout: Mutex::new(io::stdout())
         }
     }
 }
 
 impl Z80IODevice for StdioDevice {
-    fn read_in(&mut self) -> u8 {
+    fn read_in(&self) -> u8 {
         let mut buf: [u8; 1] = [0];
-        let _ = self.stdin.read(&mut buf);
+        let mut stdin = match self.stdin.lock() {
+            Ok(x) => x,
+            Err(err) => {
+                panic!("StdioDevice mutex poisoned: {}", err);
+            },
+        };
+        let _ = stdin.read(&mut buf);
         buf[0]
     }
     fn write_out(&mut self, value: u8) {
-        let _ = self.stdout.write(&[value]);
+        let mut stdout = match self.stdout.lock() {
+            Ok(x) => x,
+            Err(err) => {
+                panic!("StdioDevice mutex poisoned: {}", err);
+            },
+        };
+        let _ = stdout.write(&[value]);
     }
 }
 
@@ -140,7 +153,14 @@ fn main() {
                 }
             }
             for i in 0..image_temp.len() {
-                memory.banks[image.bank][i] = image_temp[i];
+                let mut bank = match memory.banks[image.bank].lock() {
+                    Ok(x) => x,
+                    Err(err) => {
+                        let _ = writeln!(stderr, "-l: Mutex error: {}", err);
+                        panic!("Unable to acquire mutex for bank {}.", image.bank);
+                    }
+                };
+                bank[i] = image_temp[i];
             }
             if image.bank == 0 { bank_0_initialized = true; };
         }
@@ -149,7 +169,7 @@ fn main() {
             panic!("You must load an image for bank 0. (-l)")
         }
     }
-    let mut cpu = Z80::new(&mut memory);
+    let mut cpu = Z80::new(&memory);
     cpu.install_device(0, &mut device);
     cpu.install_device(1, &mut memory.bank_registers[0]);
     cpu.install_device(2, &mut memory.bank_registers[1]);

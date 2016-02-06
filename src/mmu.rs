@@ -1,4 +1,5 @@
 use z80e_core_rust::{ Z80IODevice, Z80Memory };
+use std::sync::Mutex;
 
 pub const BANK_SIZE: usize = 0x10000;
 
@@ -8,7 +9,7 @@ pub struct MMUBankRegister {
 }
 
 impl Z80IODevice for MMUBankRegister {
-    fn read_in(&mut self) -> u8 {
+    fn read_in(&self) -> u8 {
         self.bank
     }
     fn write_out(&mut self, bank: u8) {
@@ -18,14 +19,14 @@ impl Z80IODevice for MMUBankRegister {
 
 pub struct MMU {
     pub bank_registers: [MMUBankRegister; 4],
-    pub banks: Vec<[u8; BANK_SIZE]>,
+    pub banks: Vec<Mutex<[u8; BANK_SIZE]>>,
 }
 
 impl MMU {
     pub fn new(num_banks: u8) -> MMU {
-        let mut banks = Vec::<[u8; BANK_SIZE]>::new();
+        let mut banks = Vec::new();
         for _ in 0..num_banks {
-            banks.push([0; BANK_SIZE]);
+            banks.push(Mutex::new([0; BANK_SIZE]));
         }
         MMU {
             bank_registers: [MMUBankRegister { bank: 0 }; 4],
@@ -35,20 +36,28 @@ impl MMU {
 }
 
 impl Z80Memory for MMU {
-    fn read_byte(&mut self, address: u16) -> u8 {
+    fn read_byte(&self, address: u16) -> u8 {
         let bank_selector = (address >> 14) as usize;
         let bank = self.bank_registers[bank_selector].bank as usize;
         if bank >= self.banks.len() {
             0
         } else {
-            self.banks[bank][(address & 0x3FFF) as usize]
+            let bank = match self.banks[bank].lock() {
+                Ok(x) => x,
+                Err(err) => panic!("Bank {} mutex poisoned: {}", bank, err),
+            };
+            bank[(address & 0x3FFF) as usize]
         }
     }
     fn write_byte(&mut self, address: u16, value: u8) {
         let bank_selector = (address >> 14) as usize;
         let bank = self.bank_registers[bank_selector].bank as usize;
         if bank < self.banks.len() {
-            self.banks[bank][(address & 0x3FFF) as usize] = value;
+            let mut bank = match self.banks[bank].lock() {
+                Ok(x) => x,
+                Err(err) => panic!("Bank {} mutex poisoned: {}", bank, err),
+            };
+            bank[(address & 0x3FFF) as usize] = value;
         }
     }
 }
