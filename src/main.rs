@@ -2,12 +2,12 @@ extern crate z80e_core_rust;
 extern crate goss;
 mod mmu;
 use z80e_core_rust::{ Z80, Z80IODevice };
-use mmu::MMU;
+use mmu::{ Memory, MMU };
 use std::io::{ self, Read, Write };
 use std::env;
 use std::str::FromStr;
 use std::fs::File;
-use std::sync::Mutex;
+use std::sync::{ Arc, Mutex };
 
 struct StdioDevice {
     stdin: Mutex<io::Stdin>,
@@ -58,7 +58,8 @@ fn main() {
     let mut num_banks = NUM_BANKS;
     let mut stderr = std::io::stderr();
     let mut device = StdioDevice::new();
-    let mut memory;
+    let memory;
+    let mut mmu;
     {
         let mut images: Vec<BankImage> = Vec::new();
         match goss::getopt(env::args(), "l:n:") {
@@ -132,7 +133,8 @@ fn main() {
                 }
             },
         }
-        memory = MMU::new(num_banks);
+        memory = Memory::new(num_banks);
+        mmu = MMU::new(memory.clone());
         let mut bank_0_initialized = false;
         for image in images.iter_mut() {
             if image.bank >= num_banks as usize {
@@ -169,11 +171,13 @@ fn main() {
             panic!("You must load an image for bank 0. (-l)")
         }
     }
-    let mut cpu = Z80::new(&memory);
+    let mut cpu = Z80::new(&mut mmu);
     cpu.install_device(0, &mut device);
-    cpu.install_device(1, &mut memory.bank_registers[0]);
-    cpu.install_device(2, &mut memory.bank_registers[1]);
-    cpu.install_device(3, &mut memory.bank_registers[2]);
-    cpu.install_device(4, &mut memory.bank_registers[3]);
+    cpu.install_device(1, &mut mmu.bank_registers[0]);
+    cpu.install_device(2, &mut mmu.bank_registers[1]);
+    cpu.install_device(3, &mut mmu.bank_registers[2]);
+    cpu.install_device(4, &mut mmu.bank_registers[3]);
+    let cpu = Arc::new(&cpu);
+    
     let _ = cpu.execute(0);
 }
