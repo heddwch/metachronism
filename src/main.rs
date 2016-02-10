@@ -29,7 +29,7 @@ fn main() {
     {
         let mut images: Vec<BankImage> = Vec::new();
         match goss::getopt(env::args(), "l:n:") {
-            Ok(got_opt) => {
+            Ok(mut got_opt) => {
                 for opt in got_opt.opts {
                     match opt.switch {
                         'n' => {
@@ -80,6 +80,13 @@ fn main() {
                         },
                         switch @ _ => { let _ = writeln!(stderr, "Unhandled switch: -{}", switch); },
                     }
+                }
+                match got_opt.rest.next() {
+                    Some(x) => {
+                        let _ = writeln!(stderr, "Excess argument: {}", x);
+                        panic!("You specified an argument no switch was expecting.");
+                    },
+                    None => (),
                 }
             },
             Err(err) => {
