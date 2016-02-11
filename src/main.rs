@@ -4,7 +4,7 @@ mod mmu;
 mod stdio_dev;
 use z80e_core_rust::Z80;
 use mmu::{ Memory, MMU };
-use stdio_dev::{ StdioDevice, ConcurrentDevice };
+use stdio_dev::{ StdioDevice };
 use std::io::{ Read, Write };
 use std::str::FromStr;
 use std::env;
@@ -20,6 +20,10 @@ struct BankImage {
 }
 
 const NUM_BANKS: u8 = 1;
+
+pub trait ConcurrentDevice {
+    fn run(&mut self, die: Arc<AtomicBool>);
+}
 
 fn main() {
     let mut num_banks = NUM_BANKS;
