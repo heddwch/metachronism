@@ -1,9 +1,11 @@
+use super::ConcurrentDevice;
+
 use z80e_core_rust::{ Z80IODevice };
+
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
 use std::io::{ self, Read, Write };
 use std::thread;
-use super::ConcurrentDevice;
 
 const STATUS_READY_READ: usize = 1;
 const STATUS_READY_WRITE: usize = 2;

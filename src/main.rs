@@ -1,10 +1,15 @@
 extern crate z80e_core_rust;
 extern crate goss;
+
 mod mmu;
 mod stdio_dev;
-use z80e_core_rust::Z80;
+mod disk;
+
 use mmu::{ Memory, MMU };
 use stdio_dev::{ StdioDevice };
+
+use z80e_core_rust::Z80;
+
 use std::io::{ Read, Write };
 use std::str::FromStr;
 use std::env;
