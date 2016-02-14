@@ -29,6 +29,8 @@ const WRITE: u8 = 5;
 pub struct Disk {
     file: File,
     spt: u16,
+    bsh: u8,
+    blm: u8,
     tracks: u16,
 }
 
@@ -55,7 +57,9 @@ impl Disk {
             read += try!(file.read(&mut spt[read..]));
         }
         let spt: u16 = (spt[0] as u16) | ((spt[1] as u16) << 8);
-        try!(file.seek(SeekFrom::Current(1)));
+        let mut bsh = [u8; 1] = [0; 1];
+        while try!(file.read(&mut bsh)) == 0 {};
+        let bsh = bsh[0];
         let mut blm: [u8; 1] = [0; 1];
         while try!(file.read(&mut blm)) == 0 {};
         let blm = blm[0];
@@ -70,6 +74,8 @@ impl Disk {
         Ok(Disk {
             file: file,
             spt: spt,
+            bsh: bsh,
+            blm: blm,
             tracks: ((bls as u16 * (dsm + 1)) / spt),
         })
     }
@@ -117,7 +123,7 @@ impl Buffer {
 struct Parameters {
     disk: u8,
     track: u16,
-    sector: u8,
+    sector: u16,
     command: u8,
 }
 
