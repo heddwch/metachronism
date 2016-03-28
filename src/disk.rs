@@ -1,11 +1,13 @@
 use super::ConcurrentDevice;
 
-use z80e_core_rust::{ Z80IODevice };
+extern crate memmap;
+use z80e_core_rust::{ IoDevice };
+use self::memmap::{ Mmap };
+pub use self::memmap::{ MmapViewSync, Protection };
 
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
-use std::io::{ self, Read, Write, Seek, SeekFrom, ErrorKind };
-use std::fs::{ OpenOptions, File };
+use std::io::{ self, ErrorKind, Write };
 use std::path::Path;
 use std::thread;
 use std::str;
@@ -25,59 +27,28 @@ const SEL_TRK: u8 = 2;
 const SEL_SEC: u8 = 3;
 const READ: u8 = 4;
 const WRITE: u8 = 5;
+const FLUSH: u8 = 6;
+const OPEN: u8 = 7;
+const PARAMS: u8 = 8;
 
 pub struct Disk {
-    file: File,
-    spt: u16,
-    bsh: u8,
-    blm: u8,
+    view: Mutex<MmapViewSync>,
     tracks: u16,
+    spt: u16,
 }
 
 impl Disk {
-    pub fn open<T: AsRef<Path>>(path: &T) -> io::Result<Disk> {
-        let mut file = try!(OpenOptions::new().read(true).write(true).open(path));
-        {
-            let mut magic: [u8; 10] = [0; 10];
-            let mut read = 0;
-            while read < magic.len() {
-                read += try!(file.read(&mut magic[read..]));
-            }
-            if match str::from_utf8(&magic) {
-                Ok(x) => x,
-                Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image.")),
-            } != "<CPM_Disk>" {
-                return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
-            }
+    pub fn open<T: AsRef<Path>>(path: &T, protection: Protection) -> io::Result<Disk> {
+        let mut file = try!(Mmap::open_path(path, protection)).into_view_sync();
+        let (header, image) = try!(file.split_at(128));
+        let header = unsafe { header.as_slice() };
+        if match str::from_utf8(&header[0..9]) {
+            Ok(x) => x,
+            Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image.")),
+        } != "<CPM_Disk>" {
+            return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
-        try!(file.seek(SeekFrom::Start(32)));
-        let mut spt: [u8; 2] = [0; 2];
-        let mut read = 0;
-        while read < spt.len() {
-            read += try!(file.read(&mut spt[read..]));
-        }
-        let spt: u16 = (spt[0] as u16) | ((spt[1] as u16) << 8);
-        let mut bsh = [u8; 1] = [0; 1];
-        while try!(file.read(&mut bsh)) == 0 {};
-        let bsh = bsh[0];
-        let mut blm: [u8; 1] = [0; 1];
-        while try!(file.read(&mut blm)) == 0 {};
-        let blm = blm[0];
-        let bls = blm + 1;
-        try!(file.seek(SeekFrom::Current(1)));
-        let mut dsm: [u8; 2] = [0; 2];
-        let mut read = 0;
-        while read < dsm.len() {
-            read += try!(file.read(&mut dsm[read..]));
-        }
-        let dsm: u16 = (dsm[0] as u16) | ((dsm[1] as u16) << 8);
-        Ok(Disk {
-            file: file,
-            spt: spt,
-            bsh: bsh,
-            blm: blm,
-            tracks: ((bls as u16 * (dsm + 1)) / spt),
-        })
+        Ok(Disk { view: Mutex::new(image), tracks: 0, spt: 0})
     }
 }
 
@@ -102,7 +73,7 @@ impl DiskController {
 
 impl ConcurrentDevice for DiskController {
     fn run(&mut self, die: Arc<AtomicBool>) {
-        
+//        let disks = Vec::new();
     }
 }
 
@@ -150,7 +121,7 @@ impl StatusPort {
     }
 }
 
-impl Z80IODevice for StatusPort {
+impl IoDevice for StatusPort {
     fn read_in(&self) -> u8 {
         (self.controller.status.load(Ordering::SeqCst) & 0xff) as u8
     }
@@ -174,7 +145,7 @@ impl DataPort {
     }
 }
 
-impl Z80IODevice for DataPort {
+impl IoDevice for DataPort {
     fn read_in (&self) -> u8 {
         if (self.controller.status.load(Ordering::SeqCst) & DATA_READY) != 0 {
             let mut buffer = self.controller.buffer.lock().unwrap();

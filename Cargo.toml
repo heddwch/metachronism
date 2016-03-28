@@ -7,3 +7,5 @@ authors = ["Quinn Evans <heddwch@lambdaos.org>"]
 z80e_core_rust = { git = "https://github.com/heddwch/z80e-core-rust.git" }
 #z80e_core_rust = { path = "../z80e-core-rust" }
 goss = { git = "https://github.com/heddwch/goss.git" }
+memmap = "*"
+
