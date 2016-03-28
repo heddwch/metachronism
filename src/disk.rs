@@ -12,6 +12,9 @@ use std::path::Path;
 use std::thread;
 use std::str;
 
+// Sector size must be a power of two.
+const SECTOR_SIZE: u16 = 128;
+
 // Status port bitflags.
 //     8-bit values, but "must" be usize to avoid overly-verbose casts for AtomicUsize calls.
 const COMMAND_READY: usize = 1 << 4;
@@ -29,12 +32,13 @@ const READ: u8 = 4;
 const WRITE: u8 = 5;
 const FLUSH: u8 = 6;
 const OPEN: u8 = 7;
-const PARAMS: u8 = 8;
+const DPB: u8 = 8;
 
 pub struct Disk {
-    view: Mutex<MmapViewSync>,
+    view: MmapView,
     tracks: u16,
     spt: u16,
+    dpb: [u8; 17],
 }
 
 impl Disk {
@@ -48,7 +52,21 @@ impl Disk {
         } != "<CPM_Disk>" {
             return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
-        Ok(Disk { view: Mutex::new(image), tracks: 0, spt: 0})
+        let mut dpb: [u8; 17] = [0; 17];
+        for i in 0..17 {
+            dpb[i] = header[32 + i];
+        }
+        let spt: u16 = (dpb[0] as u16) & ((dpb[1] as u16) << 8);
+        let bsh: u16 = (dpb[2] as u16);
+        let dsm: u16 = (dpb[5] as u16) & ((dpb[6] as u16) << 8);
+        let off: u16 = (dpb[13] as u16) & ((dpb[14] as u16) << 8);
+        let tracks: u16 = dsm * (1 << bsh) / spt + off;
+        Ok(Disk {
+            view: image,
+            tracks: tracks,
+            spt: spt,
+            dpb: dpb
+        })
     }
 }
 
@@ -78,14 +96,14 @@ impl ConcurrentDevice for DiskController {
 }
 
 struct Buffer {
-    bytes: [u8; 0x80],
+    bytes: [u8; SECTOR_SIZE],
     i: u8,
 }
 
 impl Buffer {
     fn new() -> Buffer {
         Buffer {
-            bytes: [0; 0x80],
+            bytes: [0; SECTOR_SIZE],
             i: 0,
         }
     }
@@ -149,7 +167,7 @@ impl IoDevice for DataPort {
     fn read_in (&self) -> u8 {
         if (self.controller.status.load(Ordering::SeqCst) & DATA_READY) != 0 {
             let mut buffer = self.controller.buffer.lock().unwrap();
-            let i = (buffer.i & !0x80) as usize;
+            let i = (buffer.i & !SECTOR_SIZE) as usize;
             buffer.i += 1;
             buffer.bytes[i]
         } else {
@@ -160,7 +178,7 @@ impl IoDevice for DataPort {
     fn write_out(&mut self, value: u8) {
         if (self.controller.status.load(Ordering::SeqCst) & DATA_READY) != 0 {
             let mut buffer = self.controller.buffer.lock().unwrap();
-            let i = (buffer.i & !0x80) as usize;
+            let i = (buffer.i & !SECTOR_SIZE) as usize;
             buffer.i += 1;
             buffer.bytes[i] = value;
         } else {
