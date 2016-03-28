@@ -3,7 +3,7 @@ use super::ConcurrentDevice;
 extern crate memmap;
 use z80e_core_rust::{ IoDevice };
 use self::memmap::{ Mmap };
-pub use self::memmap::{ MmapViewSync, Protection };
+pub use self::memmap::{ MmapView, Protection };
 
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
@@ -36,31 +36,31 @@ const DPB: u8 = 8;
 
 pub struct Disk {
     view: MmapView,
-    tracks: u16,
-    spt: u16,
+    pub tracks: u16,
+    pub spt: u16,
     dpb: [u8; 17],
 }
 
 impl Disk {
     pub fn open<T: AsRef<Path>>(path: &T, protection: Protection) -> io::Result<Disk> {
-        let mut file = try!(Mmap::open_path(path, protection)).into_view_sync();
+        let mut file = try!(Mmap::open_path(path, protection)).into_view();
         let (header, image) = try!(file.split_at(128));
         let header = unsafe { header.as_slice() };
-        if match str::from_utf8(&header[0..9]) {
+        if match str::from_utf8(&header[0..10]) {
             Ok(x) => x,
-            Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image.")),
-        } != "<CPM_Disk>" {
+            Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, "Invalid image header encoding.")),
+        }!= "<CPM_Disk>" {
             return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
         let mut dpb: [u8; 17] = [0; 17];
         for i in 0..17 {
             dpb[i] = header[32 + i];
         }
-        let spt: u16 = (dpb[0] as u16) & ((dpb[1] as u16) << 8);
+        let spt: u16 = (dpb[0] as u16) | ((dpb[1] as u16) << 8);
         let bsh: u16 = (dpb[2] as u16);
-        let dsm: u16 = (dpb[5] as u16) & ((dpb[6] as u16) << 8);
-        let off: u16 = (dpb[13] as u16) & ((dpb[14] as u16) << 8);
-        let tracks: u16 = dsm * (1 << bsh) / spt + off;
+        let dsm: u16 = (dpb[5] as u16) | ((dpb[6] as u16) << 8);
+        let off: u16 = (dpb[13] as u16) | ((dpb[14] as u16) << 8);
+        let tracks: u16 = (dsm + 1) * (1 << bsh) / spt + off;
         Ok(Disk {
             view: image,
             tracks: tracks,
@@ -96,14 +96,14 @@ impl ConcurrentDevice for DiskController {
 }
 
 struct Buffer {
-    bytes: [u8; SECTOR_SIZE],
-    i: u8,
+    bytes: [u8; SECTOR_SIZE as usize],
+    i: u16,
 }
 
 impl Buffer {
     fn new() -> Buffer {
         Buffer {
-            bytes: [0; SECTOR_SIZE],
+            bytes: [0; SECTOR_SIZE as usize],
             i: 0,
         }
     }
