@@ -1,4 +1,4 @@
-use z80e_core_rust::{ Z80IODevice, Z80Memory };
+use z80e_core_rust::{ self as z80, IoDevice };
 
 use std::sync::{ Arc, Mutex };
 
@@ -9,7 +9,7 @@ pub struct MMUBankRegister {
     bank: u8,
 }
 
-impl Z80IODevice for MMUBankRegister {
+impl IoDevice for MMUBankRegister {
     fn read_in(&self) -> u8 {
         self.bank
     }
@@ -54,7 +54,7 @@ impl MMU {
     }
 }
 
-impl Z80Memory for MMU {
+impl z80::Memory for MMU {
     fn read_byte(&self, address: u16) -> u8 {
         let bank_selector = (address >> 14) as usize;
         let bank_num = self.bank_registers[bank_selector].bank as usize;

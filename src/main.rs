@@ -8,7 +8,7 @@ mod disk;
 use mmu::{ Memory, MMU };
 use stdio_dev::{ StdioDevice };
 
-use z80e_core_rust::Z80;
+use z80e_core_rust::Cpu;
 
 use std::io::{ Read, Write };
 use std::str::FromStr;
@@ -153,7 +153,7 @@ fn main() {
             panic!("You must load an image for bank 0. (-l)")
         }
     }
-    let mut cpu = Z80::new(&mut mmu);
+    let mut cpu = Cpu::new(&mut mmu);
     cpu.install_device(0, &mut mmu.bank_registers[0]);
     cpu.install_device(1, &mut mmu.bank_registers[1]);
     cpu.install_device(2, &mut mmu.bank_registers[2]);

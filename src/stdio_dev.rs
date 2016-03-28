@@ -1,6 +1,6 @@
 use super::ConcurrentDevice;
 
-use z80e_core_rust::{ Z80IODevice };
+use z80e_core_rust::{ IoDevice };
 
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
@@ -24,7 +24,7 @@ impl StdioControl {
     }
 }
 
-impl Z80IODevice for StdioControl {
+impl IoDevice for StdioControl {
     fn read_in(&self) -> u8 {
         (self.device.status.load(Ordering::SeqCst) & 0xff) as u8
     }
@@ -44,7 +44,7 @@ impl StdioData {
     }
 }
 
-impl Z80IODevice for StdioData {
+impl IoDevice for StdioData {
     fn read_in(&self) -> u8 {
         let status = self.device.status.load(Ordering::SeqCst);
         if (status & STATUS_READY_READ) != 0 {
