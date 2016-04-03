@@ -5,10 +5,9 @@ use z80e_core_rust::{ IoDevice };
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
 use std::io::{ self, Read, Write };
-use std::thread;
 
-const STATUS_READY_READ: usize = 1;
-const STATUS_READY_WRITE: usize = 2;
+const STATUS_READY_READ: usize = 1 << 0;
+const STATUS_READY_WRITE: usize = 1 << 1;
 
 const BUF_LENGTH: usize = 0x100;
 
@@ -57,8 +56,7 @@ impl IoDevice for StdioData {
             if buffer.len() == 1 {
                 self.device.status.fetch_and(!STATUS_READY_READ, Ordering::SeqCst);
             }
-            let byte = buffer.remove(0);
-            byte
+            buffer.remove(0)
         } else {
             let _ = writeln!(io::stderr(), "Attempted to read StdioDevice when it wasn't ready.");
             0

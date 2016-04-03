@@ -4,11 +4,15 @@ extern crate goss;
 mod mmu;
 mod stdio_dev;
 mod disk;
+mod debug;
 
 use mmu::{ Memory, MMU };
 use stdio_dev::{ StdioDevice };
 
+use disk::{ Disk, Protection };
 use z80e_core_rust::Cpu;
+
+use debug::DebugDevice;
 
 use std::io::{ Read, Write };
 use std::str::FromStr;
@@ -136,14 +140,14 @@ fn main() {
                     panic!("Unable to read bank image.");
                 }
             }
+            let mut bank = match memory.banks[image.bank].lock() {
+                Ok(x) => x,
+                Err(err) => {
+                    let _ = writeln!(stderr, "-l: Mutex error: {}", err);
+                    panic!("Unable to acquire mutex for bank {}.", image.bank);
+                }
+            };
             for i in 0..image_temp.len() {
-                let mut bank = match memory.banks[image.bank].lock() {
-                    Ok(x) => x,
-                    Err(err) => {
-                        let _ = writeln!(stderr, "-l: Mutex error: {}", err);
-                        panic!("Unable to acquire mutex for bank {}.", image.bank);
-                    }
-                };
                 bank[i] = image_temp[i];
             }
             if image.bank == 0 { bank_0_initialized = true; };
@@ -162,6 +166,8 @@ fn main() {
     let device = StdioDevice::new();
     cpu.install_device(4, &mut device.get_control_port());
     cpu.install_device(5, &mut device.get_data_port());
+
+    cpu.install_device(6, &mut DebugDevice::new());
 
     let die = Arc::new(AtomicBool::new(false));
     let mut device_threads = Vec::new();
