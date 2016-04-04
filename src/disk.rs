@@ -208,5 +208,91 @@ impl ConcurrentDevice for DiskController {
             };
             disks
         };
+        let mut parameters = self.parameters.lock().unwrap();
+        loop {
+            while !(*parameters).do_command {
+                parameters = self.command_cond.wait(parameters).unwrap();
+            }
+            if die.load(Ordering::Acquire) { break; }
+            let status = self.status.fetch_and(!DATA_READY, Ordering::SeqCst);
+            if (status & ERROR) != 0 && parameters.command != RESET {
+                self.status.fetch_or(DATA_READY, Ordering::SeqCst);
+                continue;
+            };
+            let mut buffer = self.buffer.lock().unwrap();
+            match parameters.command {
+                NOP => (),
+                SEL_DSK => {
+                    if buffer.bytes[0] < MAX_DISK {
+                        parameters.disk = buffer.bytes[0];
+                    } else {
+                        self.status.fetch_or(ERROR, Ordering::SeqCst);
+                    }
+                },
+                SEL_TRK => {
+                    let track = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                    match disks[parameters.disk as usize] {
+                        Some(ref disk) => {
+                            if track < disk.tracks {
+                                parameters.track = track;
+                            } else {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            }
+                        },
+                        None => {
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        }
+                    }
+                },
+                SEL_SEC => {
+                    match disks[parameters.disk as usize] {
+                        Some(ref disk) => {
+                            let sector = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                            if sector < disk.spt {
+                                parameters.sector = sector;
+                            } else {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            }
+                        },
+                        None => {
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        },
+                    }
+                },
+                READ => {
+                    match disks[parameters.disk as usize] {
+                        Some(ref disk) => {
+                            let off = ((parameters.track as usize * disk.spt as usize)
+                                       + parameters.sector as usize) * SECTOR_SIZE as usize;
+                            let bytes = unsafe { disk.view.as_slice() };
+                            for (i, byte) in buffer.bytes.iter_mut().enumerate() {
+                                *byte = bytes[off + i];
+                            }
+                        },
+                        None => {
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        },
+                    }
+                },
+                WRITE => {
+                    match disks[parameters.disk as usize] {
+                        Some(ref mut disk) => {
+                            let off = ((parameters.track as usize * disk.spt as usize)
+                                       + parameters.sector as usize) * SECTOR_SIZE as usize;
+                            let bytes = unsafe { disk.view.as_mut_slice() };
+                            for (i, byte) in buffer.bytes.iter().enumerate() {
+                                bytes[i] = *byte;
+                            };
+                        },
+                        None => {
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        },
+                    }
+
+                }
+                _ => (),
+            }
+            self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
+        }
     }
 }
