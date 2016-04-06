@@ -288,6 +288,47 @@ impl ConcurrentDevice for DiskController {
                     }
 
                 }
+                RESET => {
+                    parameters.disk = 0;
+                    parameters.track = 0;
+                    parameters.sector = 0;
+                    parameters.command = NOP;
+                    self.status.fetch_and(!ERROR, Ordering::SeqCst);
+                },
+                OPEN => {
+                    match str::from_utf8(&buffer.bytes[0..SECTOR_SIZE as usize]) {
+                        Ok(file_name) => {
+                            match Disk::open(&file_name, Protection::ReadWrite) {
+                                Ok(disk) => {
+                                    disks[parameters.disk as usize] = Some(disk);
+                                },
+                                Err(err) => {
+                                    let _ = write!(io::stderr(), "disk: Failed to open file.\nError:\n\t{}\n", err);
+                                    self.status.fetch_or(ERROR, Ordering::SeqCst);
+                                },
+                            }
+                        },
+                        Err(err) => {
+                            let _ = write!(io::stderr(), "disk: Bad UTF-8 in file name.\nError:\n\t{}\n", err);
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        }
+                    }
+                },
+                CLOSE => {
+                    disks[parameters.disk as usize] = None;
+                },
+                DPB => {
+                    match disks[parameters.disk as usize] {
+                        Some(ref disk) => {
+                            for (a, b) in disk.dpb.iter().zip(buffer.bytes.iter_mut()) {
+                                *b = *a;
+                            }
+                        },
+                        None => {
+                            self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        }
+                    }
+                },
                 _ => (),
             }
             self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
