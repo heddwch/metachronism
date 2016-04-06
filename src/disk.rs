@@ -165,7 +165,7 @@ pub struct Disk {
     view: MmapView,
     pub tracks: u16,
     pub spt: u16,
-    dpb: [u8; 17],
+    dpb: [u8; 16],
 }
 
 impl Disk {
@@ -179,7 +179,7 @@ impl Disk {
         }!= "<CPM_Disk>" {
             return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
-        let mut dpb: [u8; 17] = [0; 17];
+        let mut dpb: [u8; 16] = [0; 16];
         for i in 0..17 {
             dpb[i] = header[32 + i];
         }
