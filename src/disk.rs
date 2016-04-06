@@ -19,11 +19,9 @@ const MAX_DISK: u8 = 16;
 
 // Status port bitflags.
 //     8-bit values, but "must" be usize to avoid overly-verbose casts for AtomicUsize calls.
-const COMMAND_READY: usize = 1 << 4;
-const DATA_READY: usize = 1 << 5;
-const RESERVED: usize = 1 << 6;
+const COMMAND_READY: usize = 1 << 0;
+const DATA_READY: usize = 1 << 1;
 const ERROR: usize = 1 << 7;
-const DISK_MASK: usize = (MAX_DISK - 1) as usize;
 
 // Commands.
 const NOP: u8 = 0;
