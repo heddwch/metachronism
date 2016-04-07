@@ -186,7 +186,7 @@ impl Disk {
             return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
         let mut dpb: [u8; 16] = [0; 16];
-        for i in 0..17 {
+        for i in 0..16 {
             dpb[i] = header[32 + i];
         }
         let spt: u16 = (dpb[0] as u16) | ((dpb[1] as u16) << 8);
