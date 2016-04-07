@@ -169,6 +169,10 @@ fn main() {
 
     cpu.install_device(6, &mut DebugDevice::new());
 
+    let disk_controller = disk::DiskController::new();
+    cpu.install_device(7, &mut disk_controller.status_port());
+    cpu.install_device(8, &mut disk_controller.data_port());
+
     let die = Arc::new(AtomicBool::new(false));
     let mut device_threads = Vec::new();
     {
@@ -181,6 +185,8 @@ fn main() {
         let die = die.clone();
         device_threads.push(thread::spawn(move || writer.run(die)));
     }
+    
+    
 
     let cpu = Arc::new(&cpu);
     let _ = cpu.execute(0);

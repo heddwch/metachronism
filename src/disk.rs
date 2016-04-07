@@ -44,13 +44,19 @@ pub struct DiskController {
 }
 
 impl DiskController {
-    fn new() -> DiskController {
+    pub fn new() -> DiskController {
         DiskController {
             status: Arc::new(AtomicUsize::new(DATA_READY)),
             command_cond: Arc::new(Condvar::new()),
             buffer: Arc::new(Mutex::new(Buffer::new())),
             parameters: Arc::new(Mutex::new(Parameters::new())),
         }
+    }
+    pub fn status_port(&self) -> StatusPort {
+        StatusPort::new(self.clone())
+    }
+    pub fn data_port(&self) -> DataPort {
+        DataPort::new(self.clone())
     }
 }
 
