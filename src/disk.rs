@@ -156,8 +156,8 @@ impl IoDevice for DataPort {
         if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
             {
                 let mut buffer = self.controller.buffer.lock().unwrap();
-                buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
                 buffer.bytes[buffer.i as usize] = value;
+                buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
             }
             self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
         } else {
@@ -304,14 +304,16 @@ impl ConcurrentDevice for DiskController {
                         self.status.fetch_and(!ERROR, Ordering::SeqCst);
                     },
                     OPEN => {
-                        match str::from_utf8(&buffer.bytes[0..SECTOR_SIZE as usize]) {
+                        match str::from_utf8(buffer.bytes.split(|a| *a == 0).next().unwrap()) {
                             Ok(file_name) => {
                                 match Disk::open(&file_name, Protection::ReadWrite) {
                                     Ok(disk) => {
                                         disks[parameters.disk as usize] = Some(disk);
                                     },
                                     Err(err) => {
-                                        let _ = write!(io::stderr(), "disk: Failed to open file.\nError:\n\t{}\n", err);
+                                        let mut stderr = io::stderr();
+                                        let _ = writeln!(stderr, "disk: Failed to open file: {}", file_name);
+                                        let _ = writeln!(stderr, "Error:\n\t{}", err);
                                         self.status.fetch_or(ERROR, Ordering::SeqCst);
                                     },
                                 }

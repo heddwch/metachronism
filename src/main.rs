@@ -185,7 +185,11 @@ fn main() {
         let die = die.clone();
         device_threads.push(thread::spawn(move || writer.run(die)));
     }
-    
+    {
+        let mut device = disk_controller.clone();
+        let die = die.clone();
+        device_threads.push(thread::spawn(move || device.run(die)));
+    }
     
 
     let cpu = Arc::new(&cpu);
