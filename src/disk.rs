@@ -226,6 +226,7 @@ impl ConcurrentDevice for DiskController {
             };
             {
                 let mut buffer = self.buffer.lock().unwrap();
+                buffer.i = 0;
                 match parameters.command {
                     NOP => (),
                     SEL_DSK => {
