@@ -46,7 +46,7 @@ pub struct DiskController {
 impl DiskController {
     fn new() -> DiskController {
         DiskController {
-            status: Arc::new(AtomicUsize::new(0)),
+            status: Arc::new(AtomicUsize::new(DATA_READY)),
             command_cond: Arc::new(Condvar::new()),
             buffer: Arc::new(Mutex::new(Buffer::new())),
             parameters: Arc::new(Mutex::new(Parameters::new())),
@@ -208,6 +208,7 @@ impl ConcurrentDevice for DiskController {
         };
         let mut parameters = self.parameters.lock().unwrap();
         loop {
+            self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
             while !(*parameters).do_command {
                 parameters = self.command_cond.wait(parameters).unwrap();
             }
@@ -217,121 +218,126 @@ impl ConcurrentDevice for DiskController {
                 self.status.fetch_or(DATA_READY, Ordering::SeqCst);
                 continue;
             };
-            let mut buffer = self.buffer.lock().unwrap();
-            match parameters.command {
-                NOP => (),
-                SEL_DSK => {
-                    if buffer.bytes[0] < MAX_DISK {
-                        parameters.disk = buffer.bytes[0];
-                    } else {
-                        self.status.fetch_or(ERROR, Ordering::SeqCst);
-                    }
-                },
-                SEL_TRK => {
-                    let track = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
-                    match disks[parameters.disk as usize] {
-                        Some(ref disk) => {
-                            if track < disk.tracks {
-                                parameters.track = track;
-                            } else {
-                                self.status.fetch_or(ERROR, Ordering::SeqCst);
-                            }
-                        },
-                        None => {
+            {
+                let mut buffer = self.buffer.lock().unwrap();
+                match parameters.command {
+                    NOP => (),
+                    SEL_DSK => {
+                        if buffer.bytes[0] < MAX_DISK {
+                            parameters.disk = buffer.bytes[0];
+                        } else {
                             self.status.fetch_or(ERROR, Ordering::SeqCst);
                         }
-                    }
-                },
-                SEL_SEC => {
-                    match disks[parameters.disk as usize] {
-                        Some(ref disk) => {
-                            let sector = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
-                            if sector < disk.spt {
-                                parameters.sector = sector;
-                            } else {
-                                self.status.fetch_or(ERROR, Ordering::SeqCst);
-                            }
-                        },
-                        None => {
-                            self.status.fetch_or(ERROR, Ordering::SeqCst);
-                        },
-                    }
-                },
-                READ => {
-                    match disks[parameters.disk as usize] {
-                        Some(ref disk) => {
-                            let off = ((parameters.track as usize * disk.spt as usize)
-                                       + parameters.sector as usize) * SECTOR_SIZE as usize;
-                            let bytes = unsafe { disk.view.as_slice() };
-                            for (i, byte) in buffer.bytes.iter_mut().enumerate() {
-                                *byte = bytes[off + i];
-                            }
-                        },
-                        None => {
-                            self.status.fetch_or(ERROR, Ordering::SeqCst);
-                        },
-                    }
-                },
-                WRITE => {
-                    match disks[parameters.disk as usize] {
-                        Some(ref mut disk) => {
-                            let off = ((parameters.track as usize * disk.spt as usize)
-                                       + parameters.sector as usize) * SECTOR_SIZE as usize;
-                            let bytes = unsafe { disk.view.as_mut_slice() };
-                            for (i, byte) in buffer.bytes.iter().enumerate() {
-                                bytes[i] = *byte;
-                            };
-                        },
-                        None => {
-                            self.status.fetch_or(ERROR, Ordering::SeqCst);
-                        },
-                    }
-
-                }
-                RESET => {
-                    parameters.disk = 0;
-                    parameters.track = 0;
-                    parameters.sector = 0;
-                    parameters.command = NOP;
-                    self.status.fetch_and(!ERROR, Ordering::SeqCst);
-                },
-                OPEN => {
-                    match str::from_utf8(&buffer.bytes[0..SECTOR_SIZE as usize]) {
-                        Ok(file_name) => {
-                            match Disk::open(&file_name, Protection::ReadWrite) {
-                                Ok(disk) => {
-                                    disks[parameters.disk as usize] = Some(disk);
-                                },
-                                Err(err) => {
-                                    let _ = write!(io::stderr(), "disk: Failed to open file.\nError:\n\t{}\n", err);
+                    },
+                    SEL_TRK => {
+                        let track = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                        match disks[parameters.disk as usize] {
+                            Some(ref disk) => {
+                                if track < disk.tracks {
+                                    parameters.track = track;
+                                } else {
                                     self.status.fetch_or(ERROR, Ordering::SeqCst);
-                                },
+                                }
+                            },
+                            None => {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
                             }
-                        },
-                        Err(err) => {
-                            let _ = write!(io::stderr(), "disk: Bad UTF-8 in file name.\nError:\n\t{}\n", err);
-                            self.status.fetch_or(ERROR, Ordering::SeqCst);
                         }
+                    },
+                    SEL_SEC => {
+                        match disks[parameters.disk as usize] {
+                            Some(ref disk) => {
+                                let sector = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                                if sector < disk.spt {
+                                    parameters.sector = sector;
+                                } else {
+                                    self.status.fetch_or(ERROR, Ordering::SeqCst);
+                                }
+                            },
+                            None => {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            },
+                        }
+                    },
+                    READ => {
+                        match disks[parameters.disk as usize] {
+                            Some(ref disk) => {
+                                let off = ((parameters.track as usize * disk.spt as usize)
+                                           + parameters.sector as usize) * SECTOR_SIZE as usize;
+                                let bytes = unsafe { disk.view.as_slice() };
+                                for (i, byte) in buffer.bytes.iter_mut().enumerate() {
+                                    *byte = bytes[off + i];
+                                }
+                            },
+                            None => {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            },
+                        }
+                    },
+                    WRITE => {
+                        match disks[parameters.disk as usize] {
+                            Some(ref mut disk) => {
+                                let off = ((parameters.track as usize * disk.spt as usize)
+                                           + parameters.sector as usize) * SECTOR_SIZE as usize;
+                                let bytes = unsafe { disk.view.as_mut_slice() };
+                                for (i, byte) in buffer.bytes.iter().enumerate() {
+                                    bytes[i] = *byte;
+                                };
+                            },
+                            None => {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            },
+                        }
+
                     }
-                },
-                CLOSE => {
-                    disks[parameters.disk as usize] = None;
-                },
-                DPB => {
-                    match disks[parameters.disk as usize] {
-                        Some(ref disk) => {
-                            for (a, b) in disk.dpb.iter().zip(buffer.bytes.iter_mut()) {
-                                *b = *a;
+                    RESET => {
+                        parameters.disk = 0;
+                        parameters.track = 0;
+                        parameters.sector = 0;
+                        parameters.command = NOP;
+                        self.status.fetch_and(!ERROR, Ordering::SeqCst);
+                    },
+                    OPEN => {
+                        match str::from_utf8(&buffer.bytes[0..SECTOR_SIZE as usize]) {
+                            Ok(file_name) => {
+                                match Disk::open(&file_name, Protection::ReadWrite) {
+                                    Ok(disk) => {
+                                        disks[parameters.disk as usize] = Some(disk);
+                                    },
+                                    Err(err) => {
+                                        let _ = write!(io::stderr(), "disk: Failed to open file.\nError:\n\t{}\n", err);
+                                        self.status.fetch_or(ERROR, Ordering::SeqCst);
+                                    },
+                                }
+                            },
+                            Err(err) => {
+                                let _ = write!(io::stderr(), "disk: Bad UTF-8 in file name.\nError:\n\t{}\n", err);
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
                             }
-                        },
-                        None => {
-                            self.status.fetch_or(ERROR, Ordering::SeqCst);
                         }
-                    }
-                },
-                _ => (),
+                    },
+                    CLOSE => {
+                        disks[parameters.disk as usize] = None;
+                    },
+                    DPB => {
+                        match disks[parameters.disk as usize] {
+                            Some(ref disk) => {
+                                for (a, b) in disk.dpb.iter().zip(buffer.bytes.iter_mut()) {
+                                    *b = *a;
+                                }
+                            },
+                            None => {
+                                self.status.fetch_or(ERROR, Ordering::SeqCst);
+                            }
+                        }
+                    },
+                    _ => {
+                        self.status.fetch_or(ERROR, Ordering::SeqCst);
+                        let _ = write!(io::stderr(), "disk: System sent bad command: {:02X}\n", parameters.command);
+                    },
+                }
             }
-            self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
+            self.status.fetch_or(DATA_READY, Ordering::SeqCst);
         }
     }
 }
