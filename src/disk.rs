@@ -346,8 +346,8 @@ impl ConcurrentDevice for DiskController {
                     },
                 }
             }
-            self.status.fetch_or(DATA_READY, Ordering::SeqCst);
             parameters.do_command = false;
+            self.status.fetch_or(DATA_READY, Ordering::SeqCst);
         }
     }
 }
