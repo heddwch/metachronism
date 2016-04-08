@@ -144,13 +144,13 @@ impl IoDevice for DataPort {
                 buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
                 byte = buffer.bytes[buffer.i as usize];
             }
-            self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
             byte
         } else {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to read data register when not ready.");
             0
         }
+        self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
     }
     fn write_out(&mut self, value: u8) {
         if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
@@ -159,11 +159,11 @@ impl IoDevice for DataPort {
                 buffer.bytes[buffer.i as usize] = value;
                 buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
             }
-            self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
         } else {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to write data register when not ready.");
         }
+        self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
     }
 }
 
