@@ -137,7 +137,7 @@ impl DataPort {
 
 impl IoDevice for DataPort {
     fn read_in (&self) -> u8 {
-        if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
+        let byte = if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
             let byte;
             {
                 let mut buffer = self.controller.buffer.lock().unwrap();
@@ -149,8 +149,9 @@ impl IoDevice for DataPort {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to read data register when not ready.");
             0
-        }
+        };
         self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
+        byte
     }
     fn write_out(&mut self, value: u8) {
         if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
