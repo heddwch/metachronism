@@ -237,7 +237,7 @@ impl ConcurrentDevice for DiskController {
                         }
                     },
                     SEL_TRK => {
-                        let track = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                        let track = buffer.bytes[0] as u16 | ((buffer.bytes[1] as u16) << 8);
                         match disks[parameters.disk as usize] {
                             Some(ref disk) => {
                                 if track < disk.tracks {
@@ -254,7 +254,7 @@ impl ConcurrentDevice for DiskController {
                     SEL_SEC => {
                         match disks[parameters.disk as usize] {
                             Some(ref disk) => {
-                                let sector = buffer.bytes[0] as u16 & ((buffer.bytes[1] as u16) << 8);
+                                let sector = buffer.bytes[0] as u16 | ((buffer.bytes[1] as u16) << 8);
                                 if sector < disk.spt {
                                     parameters.sector = sector;
                                 } else {
@@ -347,6 +347,7 @@ impl ConcurrentDevice for DiskController {
                 }
             }
             self.status.fetch_or(DATA_READY, Ordering::SeqCst);
+            parameters.do_command = false;
         }
     }
 }
