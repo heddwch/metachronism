@@ -28,6 +28,7 @@ impl IoDevice for StdioControl {
         (self.device.status.load(Ordering::SeqCst) & 0xff) as u8
     }
     fn write_out(&mut self, value: u8) {
+        let _ = value;
     }
 }
 

@@ -94,7 +94,7 @@ impl Parameters {
     }
 }
 
-struct StatusPort {
+pub struct StatusPort {
     controller: DiskController,
 }
 
@@ -123,7 +123,7 @@ impl IoDevice for StatusPort {
     }
 }
         
-struct DataPort {
+pub struct DataPort {
     controller: DiskController,
 }
 
@@ -177,12 +177,12 @@ pub struct Disk {
 
 impl Disk {
     pub fn open<T: AsRef<Path>>(path: &T, protection: Protection) -> io::Result<Disk> {
-        let mut file = try!(Mmap::open_path(path, protection)).into_view();
+        let file = try!(Mmap::open_path(path, protection)).into_view();
         let (header, image) = try!(file.split_at(128));
         let header = unsafe { header.as_slice() };
         if match str::from_utf8(&header[0..10]) {
             Ok(x) => x,
-            Err(err) => return Err(io::Error::new(ErrorKind::InvalidData, "Invalid image header encoding.")),
+            Err(_) => return Err(io::Error::new(ErrorKind::InvalidData, "Invalid image header encoding.")),
         }!= "<CPM_Disk>" {
             return Err(io::Error::new(ErrorKind::InvalidData, "Not a valid disk image."));
         }
@@ -191,7 +191,7 @@ impl Disk {
             dpb[i] = header[32 + i];
         }
         let spt: u16 = (dpb[0] as u16) | ((dpb[1] as u16) << 8);
-        let bsh: u16 = (dpb[2] as u16);
+        let bsh: u16 = dpb[2] as u16;
         let dsm: u16 = (dpb[5] as u16) | ((dpb[6] as u16) << 8);
         let off: u16 = (dpb[13] as u16) | ((dpb[14] as u16) << 8);
         let tracks: u16 = (dsm + 1) * (1 << bsh) / spt + off;
