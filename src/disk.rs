@@ -215,6 +215,8 @@ impl ConcurrentDevice for DiskController {
         };
         let mut parameters = self.parameters.lock().unwrap();
         loop {
+            if die.load(Ordering::Acquire) { break; }
+            parameters.do_command = false;
             self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
             while !(*parameters).do_command {
                 parameters = self.command_cond.wait(parameters).unwrap();
@@ -347,7 +349,6 @@ impl ConcurrentDevice for DiskController {
                     },
                 }
             }
-            parameters.do_command = false;
             self.status.fetch_or(DATA_READY, Ordering::SeqCst);
         }
     }
