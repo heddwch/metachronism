@@ -291,7 +291,7 @@ impl ConcurrentDevice for DiskController {
                                            + parameters.sector as usize) * SECTOR_SIZE as usize;
                                 let bytes = unsafe { disk.view.as_mut_slice() };
                                 for (i, byte) in buffer.bytes.iter().enumerate() {
-                                    bytes[i] = *byte;
+                                    bytes[off + i] = *byte;
                                 };
                             },
                             None => {
