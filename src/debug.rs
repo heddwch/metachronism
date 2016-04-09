@@ -1,5 +1,4 @@
 use z80e_core_rust::IoDevice;
-use std::io::{ Stdout };
 
 pub struct DebugDevice;
 
