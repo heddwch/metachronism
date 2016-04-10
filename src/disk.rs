@@ -1,4 +1,4 @@
-use super::ConcurrentDevice;
+use super::{ ConcurrentDevice };
 
 extern crate memmap;
 use z80e_core_rust::{ IoDevice };
@@ -7,6 +7,7 @@ pub use self::memmap::{ MmapView, Protection };
 
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
+use std::time::Duration;
 use std::io::{ self, ErrorKind, Write };
 use std::path::Path;
 use std::{ str, mem, ptr };
@@ -202,7 +203,7 @@ impl Disk {
 }
 
 impl ConcurrentDevice for DiskController {
-    fn run(&mut self, die: Arc<AtomicBool>) {
+    fn run(&mut self, die: Arc<AtomicBool>, timeout: Duration) {
         let mut disks = unsafe {
             let mut disks: [Option<Disk>; MAX_DISK as usize] = mem::uninitialized();
             for disk in disks.iter_mut() {
@@ -216,10 +217,11 @@ impl ConcurrentDevice for DiskController {
             parameters.do_command = false;
             while !(*parameters).do_command {
                 self.status.fetch_or(READY, Ordering::SeqCst);
-                parameters = self.command_cond.wait(parameters).unwrap();
+                let (new, _) = self.command_cond.wait_timeout(parameters, timeout).unwrap();
+                parameters = new;
+                if die.load(Ordering::Acquire) { return; };
             }
             let status = self.status.fetch_and(!READY, Ordering::SeqCst);
-            if die.load(Ordering::Acquire) { break; }
             if (status & ERROR) != 0 && parameters.command != RESET {
                 continue;
             };

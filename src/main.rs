@@ -20,6 +20,7 @@ use std::env;
 use std::fs::File;
 use std::sync::{ Arc };
 use std::sync::atomic::{ AtomicBool, Ordering };
+use std::time::Duration;
 use std::thread;
 
 struct BankImage {
@@ -29,9 +30,11 @@ struct BankImage {
 }
 
 const NUM_BANKS: u8 = 1;
+const DIE_TIMEOUT_SECS: u64 = 1;
+const DIE_TIMEOUT_NANOS: u32 = 0;
 
 pub trait ConcurrentDevice {
-    fn run(&mut self, die: Arc<AtomicBool>);
+    fn run(&mut self, die: Arc<AtomicBool>, timeout: Duration);
 }
 
 fn main() {
@@ -174,27 +177,32 @@ fn main() {
     cpu.install_device(8, &mut disk_controller.data_port());
 
     let die = Arc::new(AtomicBool::new(false));
+    let timeout = Duration::new(DIE_TIMEOUT_SECS, DIE_TIMEOUT_NANOS);
     let mut device_threads = Vec::new();
     {
         let mut reader = device.get_reader();
         let die = die.clone();
-        device_threads.push(thread::spawn(move || reader.run(die)));
+        let timeout = timeout.clone();
+        device_threads.push(thread::spawn(move || reader.run(die, timeout)));
     }
     {
         let mut writer = device.get_writer();
         let die = die.clone();
-        device_threads.push(thread::spawn(move || writer.run(die)));
+        let timeout = timeout.clone();
+        device_threads.push(thread::spawn(move || writer.run(die, timeout)));
     }
     {
         let mut device = disk_controller.clone();
         let die = die.clone();
-        device_threads.push(thread::spawn(move || device.run(die)));
+        let timeout = timeout.clone();
+        device_threads.push(thread::spawn(move || device.run(die, timeout)));
     }
     
 
     let cpu = Arc::new(&cpu);
     let _ = cpu.execute(0);
     die.store(true, Ordering::Release);
+    println!("Waiting for all threads to quit… (Press Enter if they don't. [StdioReader is broken.])");
     for thread in device_threads {
         let _ = thread.join().unwrap();
     }

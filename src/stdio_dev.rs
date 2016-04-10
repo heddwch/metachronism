@@ -4,6 +4,7 @@ use z80e_core_rust::{ IoDevice };
 
 use std::sync::{ Arc, Condvar, Mutex };
 use std::sync::atomic::{ AtomicBool, AtomicUsize, Ordering };
+use std::time::Duration;
 use std::io::{ self, Read, Write };
 
 const STATUS_READY_READ: usize = 1 << 0;
@@ -98,9 +99,11 @@ impl StdioReader {
 }
 
 impl ConcurrentDevice for StdioReader {
-    fn run(&mut self, die: Arc<AtomicBool>) {
+    fn run(&mut self, die: Arc<AtomicBool>, timeout: Duration) {
         let mut buf: [u8; BUF_LENGTH] = [0; BUF_LENGTH];
         loop {
+            // I wish this weren't so, but there's no read() with a timeout.
+            let _ = timeout;
             if die.load(Ordering::Acquire) { break };
             let count = match self.stdin.read(&mut buf) {
                 Ok(x) => x,
@@ -138,14 +141,15 @@ impl StdioWriter {
 }
 
 impl ConcurrentDevice for StdioWriter {
-    fn run(&mut self, die: Arc<AtomicBool>) {
+    fn run(&mut self, die: Arc<AtomicBool>, timeout: Duration) {
         let mut have_data = self.device.writer_state.have_data.lock().unwrap();
         self.device.status.fetch_or(STATUS_READY_WRITE, Ordering::SeqCst);
         loop {
             while !*have_data {
-                have_data = self.device.writer_state.have_data_cond.wait(have_data).unwrap();
+                let (new, _) = self.device.writer_state.have_data_cond.wait_timeout(have_data, timeout).unwrap();
+                have_data = new;
+                if die.load(Ordering::Acquire) { return; };
             }
-            if die.load(Ordering::Acquire) { break };
             let mut buffer = self.device.writer_state.buffer.lock().unwrap();
             let mut buf: [u8; BUF_LENGTH] = [0; BUF_LENGTH];
             loop {
