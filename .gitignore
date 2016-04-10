@@ -1,5 +1,7 @@
 target
 Cargo.lock
 
+bios/build
+
 *.z80
 *.Z80
