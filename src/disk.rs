@@ -19,8 +19,7 @@ const MAX_DISK: u8 = 16;
 
 // Status port bitflags.
 //     8-bit values, but "must" be usize to avoid overly-verbose casts for AtomicUsize calls.
-const COMMAND_READY: usize = 1 << 0;
-const DATA_READY: usize = 1 << 1;
+const READY: usize = 1 << 0;
 const ERROR: usize = 1 << 7;
 
 // Commands.
@@ -46,7 +45,7 @@ pub struct DiskController {
 impl DiskController {
     pub fn new() -> DiskController {
         DiskController {
-            status: Arc::new(AtomicUsize::new(DATA_READY)),
+            status: Arc::new(AtomicUsize::new(0)),
             command_cond: Arc::new(Condvar::new()),
             buffer: Arc::new(Mutex::new(Buffer::new())),
             parameters: Arc::new(Mutex::new(Parameters::new())),
@@ -111,13 +110,13 @@ impl IoDevice for StatusPort {
         (self.controller.status.load(Ordering::SeqCst) & 0xff) as u8
     }
     fn write_out(&mut self, value: u8) {
-        if (self.controller.status.fetch_and(!COMMAND_READY, Ordering::SeqCst) & COMMAND_READY) != 0 {
+        if (self.controller.status.fetch_and(!READY, Ordering::SeqCst) & READY) != 0 {
             let mut params = self.controller.parameters.lock().unwrap();
             params.command = value;
             params.do_command = true;
             self.controller.command_cond.notify_one();
         } else {
-            self.controller.status.fetch_or(COMMAND_READY | ERROR, Ordering::SeqCst);
+            self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to write command register when not ready.");
         }
     }
@@ -137,24 +136,22 @@ impl DataPort {
 
 impl IoDevice for DataPort {
     fn read_in (&self) -> u8 {
-        let byte = if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
-            let byte;
+        let byte = if (self.controller.status.fetch_and(!READY, Ordering::SeqCst) & READY) != 0 {
             {
                 let mut buffer = self.controller.buffer.lock().unwrap();
                 buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
-                byte = buffer.bytes[buffer.i as usize];
+                buffer.bytes[buffer.i as usize]
             }
-            byte
         } else {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to read data register when not ready.");
             0
         };
-        self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
+        self.controller.status.fetch_or(READY, Ordering::SeqCst);
         byte
     }
     fn write_out(&mut self, value: u8) {
-        if (self.controller.status.fetch_and(!DATA_READY, Ordering::SeqCst) & DATA_READY) != 0 {
+        if (self.controller.status.fetch_and(!READY, Ordering::SeqCst) & READY) != 0 {
             {
                 let mut buffer = self.controller.buffer.lock().unwrap();
                 buffer.bytes[buffer.i as usize] = value;
@@ -164,7 +161,7 @@ impl IoDevice for DataPort {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
             let _ = writeln!(io::stderr(), "disk: Attempted to write data register when not ready.");
         }
-        self.controller.status.fetch_or(DATA_READY, Ordering::SeqCst);
+        self.controller.status.fetch_or(READY, Ordering::SeqCst);
     }
 }
 
@@ -217,14 +214,13 @@ impl ConcurrentDevice for DiskController {
         loop {
             if die.load(Ordering::Acquire) { break; }
             parameters.do_command = false;
-            self.status.fetch_or(COMMAND_READY, Ordering::SeqCst);
             while !(*parameters).do_command {
+                self.status.fetch_or(READY, Ordering::SeqCst);
                 parameters = self.command_cond.wait(parameters).unwrap();
             }
+            let status = self.status.fetch_and(!READY, Ordering::SeqCst);
             if die.load(Ordering::Acquire) { break; }
-            let status = self.status.fetch_and(!DATA_READY, Ordering::SeqCst);
             if (status & ERROR) != 0 && parameters.command != RESET {
-                self.status.fetch_or(DATA_READY, Ordering::SeqCst);
                 continue;
             };
             {
@@ -349,7 +345,6 @@ impl ConcurrentDevice for DiskController {
                     },
                 }
             }
-            self.status.fetch_or(DATA_READY, Ordering::SeqCst);
         }
     }
 }
