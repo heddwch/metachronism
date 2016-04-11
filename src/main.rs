@@ -183,7 +183,7 @@ fn main() {
         let mut reader = device.get_reader();
         let die = die.clone();
         let timeout = timeout.clone();
-        device_threads.push(thread::spawn(move || reader.run(die, timeout)));
+        thread::spawn(move || reader.run(die, timeout));
     }
     {
         let mut writer = device.get_writer();
@@ -202,7 +202,7 @@ fn main() {
     let cpu = Arc::new(&cpu);
     let _ = cpu.execute(0);
     die.store(true, Ordering::Release);
-    println!("Waiting for all threads to quit… (Press Enter if they don't. [StdioReader is broken.])");
+    println!("Waiting for all threads to quit…");
     for thread in device_threads {
         let _ = thread.join().unwrap();
     }
