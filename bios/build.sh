@@ -7,36 +7,49 @@ S_SRC=$PWD
 
 if [ ! -e ${BUILD_DIR:=$PWD/build} ]
 then
-    mkdir -p $BUILD_DIR/disks
+    mkdir ${BUILD_DIR}
+    mkdir ${BUILD_DIR}/disks
+    mkdir ${BUILD_DIR}/profiles
     echo "Clean build; directories created."
 fi
 
+cd ${BUILD_DIR}/profiles
+cat > ${VERSION:=2.2} <<EOF
+3setdef a,b,* [temporary=a:,iso,order=(sub,com)]
+c:
+EOF
+for file in $S_SRC/${VERSION:=2.2}/*.z80
+do
+    echo Z80ASM $(basename ${file} .z80)/A >> ${VERSION}
+    echo W $(basename ${file} .z80).COM >> ${VERSION}
+done
+echo e >> ${VERSION}
+
 cd $BUILD_DIR/disks
-BOOT_UTILS="BOOT_UTILS${VERSION:=2.2}.ydsk"
+BOOT_UTILS="BOOT_UTILS${VERSION}.ydsk"
 if [ -n ${BOOT_UTILS} ]
 then
     gunzip -kc ${S_CPMDSKS}/BOOT_UTILS.ydsk > ${BOOT_UTILS}
-    cdm ${BOOT_UTILS} << EOF
-cp t:${S_SRC}/profiles/${VERSION} a:profile.sub
-quit
-EOF
-    echo "cp t:${S_SRC}/profiles/${VERSION}"
 fi
 if [ -n CPM3_SYS.ydsk ]
 then
     gunzip -kc ${S_CPMDSKS}/CPM3_SYS.ydsk > CPM3_SYS.ydsk
 fi
+cdm ${BOOT_UTILS} <<EOF
+cp t:${BUILD_DIR}/profiles/${VERSION} a:profile.sub
+quit
+EOF
 cat > ${VERSION}.cdm <<EOF
 create build${VERSION}.ydsk
 mount a build${VERSION}.ydsk
 EOF
 for file in ${S_SRC}/${VERSION}/*
 do
-    echo cp t:${file} a: >> ${VERSION}.cdm
+    echo cp t:${file} a:$(basename ${file}) >> ${VERSION}.cdm
 done
 for file in ${S_SRC}/common/*
 do
-    echo cp t:${file} a: >> ${VERSION}.cdm
+    echo cp t:${file} a:$(basename ${file}) >> ${VERSION}.cdm
 done
 echo quit >> ${VERSION}.cdm
 cdm < ${VERSION}.cdm
