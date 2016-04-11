@@ -34,6 +34,10 @@ for file in ${S_SRC}/${VERSION}/*
 do
     echo cp t:${file} a: >> ${VERSION}.cdm
 done
+for file in ${S_SRC}/common/*
+do
+    echo cp t:${file} a: >> ${VERSION}.cdm
+done
 echo quit >> ${VERSION}.cdm
 cdm < ${VERSION}.cdm
 
