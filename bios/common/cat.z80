@@ -5,7 +5,7 @@
 	COM
 
 ORG 0
-	
+
 START:
 	LD	SP, 0FFFFH
 	CALL	GETCHAR
