@@ -45,7 +45,7 @@ do
 		IFS=$', \t'
 		for dep in ${OPERAND}
 		do
-		    DEPS="${DEPS:+${DEPS}$'\\n'}${dep}"
+		    DEPS=${DEPS:+${DEPS}$'\n'}${dep}
 		done
 		IFS=$' \t\n\r'
 		;;
