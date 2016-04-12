@@ -119,11 +119,7 @@ cat > ${VERSION}.cdm <<EOF
 create src${VERSION}.ydsk
 mount a src${VERSION}.ydsk
 EOF
-for file in ${S_SRC}/common/*
-do
-    echo cp t:${file} a:$(basename ${file}) >> ${VERSION}.cdm
-done
-for file in ${S_SRC}/${VERSION}/*
+for file in ${S_SRC}/common/* ${S_SRC}/${VERSION}/*
 do
     echo cp t:${file} a:$(basename ${file}) >> ${VERSION}.cdm
 done
