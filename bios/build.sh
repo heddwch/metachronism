@@ -10,21 +10,90 @@ then
     mkdir ${BUILD_DIR}
     mkdir ${BUILD_DIR}/disks
     mkdir ${BUILD_DIR}/profiles
+    mkdir ${BUILD_DIR}/deps
     echo "Clean build; directories created."
 fi
+
+read_dep () {
+    local FILE
+    while read FILE
+    do
+	local DEP
+	DEP=${BUILD_DIR}/deps/$(echo ${FILE} | tr [:upper:] [:lower:]).dep
+	if [ -e ${DEP} ]
+	then
+	    read_dep ${DEP}
+	fi
+	DEPS=${DEPS:+${DEPS}$'\\n'}${FILE}
+    done <<EOF
+$(tail -n +2 ${1})
+EOF
+}
+
+cd ${BUILD_DIR}/deps
+for file in $S_SRC/${VERSION:=2.2}/*.z80 $S_SRC/common/*.z80
+do
+    DEP=$(basename ${file} .z80).dep
+    DEPS=
+    COM=
+    DEPS=
+    IFS=$' \t\n\r'
+    while read OP OPERAND
+    do
+	case $(echo ${OP} | tr [:lower:] [:upper:]) in
+	    IMPORT)
+		IFS=$', \t'
+		for dep in ${OPERAND}
+		do
+		    DEPS="${DEPS:+${DEPS}$'\\n'}${dep}"
+		done
+		IFS=$' \t\n\r'
+		;;
+	    COM)
+		COM=YES
+		;;
+	esac
+    done < ${file}
+    if [ ${COM} ]
+    then
+	echo "COM" > ${DEP}
+    else
+	echo "REL" > ${DEP}
+    fi
+    echo ${DEPS} >> ${DEP}
+done
 
 cd ${BUILD_DIR}/profiles
 cat > ${VERSION:=2.2} <<EOF
 3setdef a,b,* [temporary=a:,iso,order=(sub,com)]
 c:
 EOF
-for file in $S_SRC/${VERSION:=2.2}/*.z80
+for file in ${S_SRC}/${VERSION:=2.2}/*.z80 ${S_SRC}/common/*.z80
 do
-    echo Z80ASM $(basename ${file} .z80).CDD/A >> ${VERSION}
-    echo W D:$(basename ${file} .z80).COM >> ${VERSION}
+    echo Z80ASM $(basename ${file} .z80).CDD/M >> ${VERSION}
+done
+echo d: >> ${VERSION}
+for file in $S_SRC/${VERSION:=2.2}/*.z80 $S_SRC/common/*.z80
+do
+    DEP=${BUILD_DIR}/deps/$(basename ${file} .z80).dep
+    DEPS=
+    read TYPE < ${DEP}
+    if [ ${TYPE} = "COM" ]
+    then
+	read_dep ${DEP}
+	echo "L80" >> ${VERSION}
+        printf "<$(basename ${file} .z80)/n/e,$(basename ${file} .z80)" >> ${VERSION}
+	DEPS=$(echo ${DEPS} | sort | uniq)
+	for dep in ${DEPS}
+	do
+	    printf ",${dep}/s" >> ${VERSION}
+	done
+	printf "\n" >> ${VERSION}
+	echo "<N" >> ${VERSION}
+	echo "W $(basename ${file} .z80).COM B" >> ${VERSION}
+    fi
 done
 cat >> ${VERSION} <<EOF
-d:
 ;Build is complete.
 ;Sources are on C:
 ;Output is on D:
