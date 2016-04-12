@@ -81,15 +81,13 @@ do
     if [ ${TYPE} = "COM" ]
     then
 	read_dep ${DEP}
-	echo "L80" >> ${VERSION}
-        printf "<$(basename ${file} .z80)/n/e,$(basename ${file} .z80)" >> ${VERSION}
+        printf "LINK $(basename ${file} .z80)" >> ${VERSION}
 	DEPS=$(echo ${DEPS} | sort | uniq)
 	for dep in ${DEPS}
 	do
-	    printf ",${dep}/s" >> ${VERSION}
+	    printf ",${dep}" >> ${VERSION}
 	done
-	printf "\n" >> ${VERSION}
-	echo "<N" >> ${VERSION}
+	printf "[L0000]\n" >> ${VERSION}
 	echo "W $(basename ${file} .z80).COM B" >> ${VERSION}
     fi
 done
