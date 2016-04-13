@@ -15,7 +15,7 @@ use std::{ str, mem, ptr };
 // Sector size must be a power of two
 const SECTOR_SIZE: u16 = 128;
 
-// Max disk must be a power of two <= 16. If changed, you must insert/delete Nones in DiskController::run()
+// Max disk must be a power of two <= 16.
 const MAX_DISK: u8 = 16;
 
 // Status port bitflags.
