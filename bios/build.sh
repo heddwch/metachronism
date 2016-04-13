@@ -40,6 +40,7 @@ do
     DEP=$(basename ${file} | awk -F . '{print $(NF - 1)}').dep
     DEPS=
     TYPE=REL
+    LOAD=
     DEPS=
     IFS=$' \t\n\r'
     while read OP OPERAND
@@ -60,13 +61,19 @@ do
 		;;
 	    COM)
 		TYPE=COM
+		LOAD=${OPERAND}
 		;;
 	    LIB)
 		TYPE=LIB
 		;;
 	esac
     done < ${file}
-    echo ${TYPE} > ${DEP}
+    printf "${TYPE}" > ${DEP}
+    if [ ${LOAD} ]
+    then
+	printf "\t${LOAD}" >> ${DEP}
+    fi
+    printf "\n" >> ${DEP}
     for dep in ${DEPS}
     do
 	echo ${dep} >> ${DEP}
@@ -107,11 +114,11 @@ done
 for file in ${BUILD_DIR}/deps/*.dep
 do
     DEPS=
-    read TYPE < ${file}
+    read TYPE LOAD < ${file}
     if [ ${TYPE} = "COM" ]
     then
 	read_dep ${file}
-        printf "LINK $(basename ${file} .dep)[L0000]" >> ${VERSION}
+        printf "LINK $(basename ${file} .dep)[L${LOAD:-0100}]" >> ${VERSION}
 	DEPS=$(echo ${DEPS} | sort | uniq)
 	for dep in ${DEPS}
 	do
