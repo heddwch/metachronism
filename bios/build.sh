@@ -23,7 +23,7 @@ read_dep () {
 	if [ -e ${DEP} ]
 	then
 	    read TYPE < ${DEP}
-	    if [${TYPE} != "LIB" ]
+	    if [ ${TYPE} != "LIB" ]
 	    then
 		read_dep ${DEP}
 	    fi
@@ -48,7 +48,7 @@ do
 	case $(echo ${OP} | tr [:lower:] [:upper:]) in
 	    IMPORT)
 		IFS=$', \t\n\r'
-		if [ ${OPERAND} ]
+		if [ "${OPERAND}" ]
 		then
 		    for dep in ${OPERAND}
 		    do
@@ -65,6 +65,14 @@ do
 		;;
 	    LIB)
 		TYPE=LIB
+		;;
+	    TAIL)
+		if [ "${OPERAND}" ]
+		then
+		    echo ${OPERAND} > $(basename ${DEP} .dep).tail
+		else
+		    echo "${file}: TAIL missing operand" >&2
+		fi
 		;;
 	esac
     done < ${file}
@@ -94,7 +102,7 @@ for file in ${BUILD_DIR}/deps/*.dep
 do
     DEPS=
     read TYPE < ${file}
-    if [ ${TYPE} = "LIB" ]
+    if [ "${TYPE}" = "LIB" ]
     then
 	read_dep ${file}
 	printf "LIB $(basename ${file} .dep)=" >> ${VERSION}
@@ -113,12 +121,13 @@ done
 
 for file in ${BUILD_DIR}/deps/*.dep
 do
+    MODULE=$(basename ${file} .dep)
     DEPS=
     read TYPE LOAD < ${file}
-    if [ ${TYPE} = "COM" ]
+    if [ "${TYPE}" = "COM" ]
     then
 	read_dep ${file}
-        printf "LINK $(basename ${file} .dep)[L${LOAD:-0100}]" >> ${VERSION}
+        printf "LINK ${MODULE}[L${LOAD:-0100}]" >> ${VERSION}
 	DEPS=$(echo ${DEPS} | sort | uniq)
 	for dep in ${DEPS}
 	do
@@ -134,8 +143,13 @@ do
 		printf ",${dep}${LIB:+[s]}" >> ${VERSION}
 	    fi
 	done
+	if [ -e ${BUILD_DIR}/deps/${MODULE}.tail ]
+	then
+	    read TAIL < ${BUILD_DIR}/deps/${MODULE}.tail
+	    printf ",${TAIL}" >> ${VERSION}
+	fi
 	printf "\n" >> ${VERSION}
-	echo "W $(basename ${file} .dep).COM B" >> ${VERSION}
+	echo "W ${MODULE}.COM B" >> ${VERSION}
     fi
 done
 cat >> ${VERSION} <<EOF

@@ -1,7 +1,16 @@
-;	Z80 CBIOS for Z80-Simulator
+;	Z80 CBIOS for Metachronism
 ;
+;	Copyright (C) 2016 Quinn Evans
+;	Based on the CBIOS from Udo Munk's z80pack
 ;	Copyright (C) 1988-2007 by Udo Munk
 ;
+	MACLIB	STDDEF.INC
+	MACLIB	CONFIG.INC
+	MACLIB	CON.INC
+	MACLIB	CONIO.INC
+	IMPORT	CONIO
+	COM
+
 MSIZE	EQU	64		;cp/m version memory size in kilobytes
 ;
 ;	"bias" is address offset from 3400H for memory systems
@@ -37,8 +46,8 @@ DMAH	EQU	16		;dma-port: dma address high
 	JP	BOOT		;cold start
 WBOOTE: JP	WBOOT		;warm start
 	JP	CONST		;console status
-	JP	CONIN		;console character in
-	JP	CONOUT		;console character out
+	JP	GETCHAR		;console character in (CONIN)
+	JP	PUTCHAR		;console character out (CONOUT)
 	JP	LIST		;list character out
 	JP	PUNCH		;punch character out
 	JP	READER		;reader character in
@@ -51,56 +60,15 @@ WBOOTE: JP	WBOOT		;warm start
 	JP	WRITE		;write disk
 	JP	LISTST		;return list status
 	JP	SECTRAN		;sector translate
-;
-;	fixed data tables for four-drive standard
-;	IBM-compatible 8" SD disks
-;
-;	disk parameter header for disk 00
-DPBASE:	DEFW	TRANS,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,DPBLK
-	DEFW	CHK00,ALL00
-;	disk parameter header for disk 01
-	DEFW	TRANS,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,DPBLK
-	DEFW	CHK01,ALL01
-;	disk parameter header for disk 02
-	DEFW	TRANS,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,DPBLK
-	DEFW	CHK02,ALL02
-;	disk parameter header for disk 03
-	DEFW	TRANS,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,DPBLK
-	DEFW	CHK03,ALL03
-;
-;	sector translate vector for the IBM 8" SD disks
-;
-TRANS:	DEFB	1,7,13,19	;sectors 1,2,3,4
-	DEFB	25,5,11,17	;sectors 5,6,7,8
-	DEFB	23,3,9,15	;sectors 9,10,11,12
-	DEFB	21,2,8,14	;sectors 13,14,15,16
-	DEFB	20,26,6,12	;sectors 17,18,19,20
-	DEFB	18,24,4,10	;sectors 21,22,23,24
-	DEFB	16,22		;sectors 25,26
-;
-;	disk parameter block, common to all IBM 8" SD disks
-;
-DPBLK:  DEFW	26		;sectors per track
-	DEFB	3		;block shift factor
-	DEFB	7		;block mask
-	DEFB	0		;extent mask
-	DEFW	242		;disk size-1
-	DEFW	63		;directory max
-	DEFB	192		;alloc 0
-	DEFB	0		;alloc 1
-	DEFW	16		;check size
-	DEFW	2		;track offset
-;
-;	fixed data tables for 4MB harddisks
-;
+
+STARTDPH:	REPT	16
+		DEFW	0000H,0000H
+		DEFW	0000H,0000H
+		DEFW	DIRBF,0000H
+		DEFW	0000H,0000H
+		DEFW	0000H,0000H
+		ENDM
+
 ;	disk parameter header
 HDB1:	DEFW	0000H,0000H
 	DEFW	0000H,0000H
@@ -145,7 +113,7 @@ PRTMSG:	LD	A,(HL)
 	OR	A
 	RET	Z
 	LD	C,A
-	CALL	CONOUT
+	CALL	PUTCHAR
 	INC	HL
 	JP	PRTMSG
 ;
@@ -233,40 +201,44 @@ GOCPM:
 ;
 ;	console status, return 0ffh if character ready, 00h if not
 ;
-CONST:	IN	A,(CONSTA)	;get console status
+CONST:
+	IN	A,(CONCTRL)	;get console status
+	AND	CONRDYR
+	JP	NZ, CONST_RDY
+	LD	A, 0
+	RET
+CONST_RDY:
+	LD	A, 0FFH
 	RET
 ;
 ;	console character into register a
+;	GETCHAR conforms to the interface, so we use it directly
+;CONIN:
 ;
-CONIN:	IN	A,(CONDAT)	;get character from console
-	RET
 ;
 ;	console character output from register c
 ;
-CONOUT: LD	A,C		;get to accumulator
-	OUT	(CONDAT),A	;send character to console
-	RET
+;	PUTCHAR conforms to the interface, so we use it directly
+;CONOUT:
 ;
 ;	list character from register c
 ;
-LIST:	LD	A,C		;character to register a
-	OUT	(PRTDAT),A
+LIST:
 	RET
 ;
 ;	return list status (00h if not ready, 0ffh if ready)
 ;
-LISTST: IN	A,(PRTSTA)
+LISTST:
 	RET
 ;
 ;	punch character from register c
 ;
-PUNCH:	LD	A,C		;character to register a
-	OUT	(AUXDAT),A
+PUNCH:
 	RET
 ;
 ;	read character into register a from reader device
 ;
-READER: IN	A,(AUXDAT)
+READER:
 	RET
 ;
 ;
@@ -280,30 +252,7 @@ HOME:	LD	C,0		;select track 0
 ;
 ;	select disk given by register C
 ;
-SELDSK: LD	HL,0000H	;error return code
-	LD	A,C
-	CP	4		;FD drive 0-3?
-	JP	C,SELFD		;go
-	CP	8		;harddisk 1?
-	JP	Z,SELHD1	;go
-	CP	9		;harddisk 2?
-	JP	Z,SELHD2	;go
-	RET			;no, error
-;	disk number is in the proper range
-;	compute proper disk parameter header address
-SELFD:	OUT	(FDCD),A	;selekt disk drive
-	LD	L,A		;L=disk number 0,1,2,3
-	ADD	HL,HL		;*2
-	ADD	HL,HL		;*4
-	ADD	HL,HL		;*8
-	ADD	HL,HL		;*16 (size of each header)
-	LD	DE,DPBASE
-	ADD	HL,DE		;HL=.dpbase(diskno*16)
-	RET
-SELHD1:	LD	HL,HDB1		;dph harddisk 1
-	JP	SELHD
-SELHD2:	LD	HL,HDB2		;dph harddisk 2
-SELHD:	OUT	(FDCD),A	;select harddisk drive
+SELDSK:
 	RET
 ;
 ;	set track given by register c
@@ -369,22 +318,23 @@ WAITIO: OUT	(FDCOP),A	;start i/o operation
 ;
 ;	scratch ram area for BDOS use
 ;
-BEGDAT	EQU	$		;beginning of data area
-DIRBF:	DEFS	128		;scratch directory area
-ALL00:	DEFS	31		;allocation vector 0
-ALL01:	DEFS	31		;allocation vector 1
-ALL02:	DEFS	31		;allocation vector 2
-ALL03:	DEFS	31		;allocation vector 3
-ALLHD1:	DEFS	255		;allocation vector harddisk 1
-ALLHD2:	DEFS	255		;allocation vector harddisk 2
-CHK00:	DEFS	16		;check vector 0
-CHK01:	DEFS	16		;check vector 1
-CHK02:	DEFS	16		;check vector 2
-CHK03:	DEFS	16		;check vector 3
-CHKHD1:	DEFS	0		;check vector harddisk 1
-CHKHD2:	DEFS	0		;check vector harddisk 2
+BEGDAT		EQU	$		;beginning of data area
+DIRBF:		DEFS	128		;scratch directory area
+ALL00:		DEFS	31		;allocation vector 0
+ALL01:		DEFS	31		;allocation vector 1
+ALL02:		DEFS	31		;allocation vector 2
+ALL03:		DEFS	31		;allocation vector 3
+ALLHD1:		DEFS	255		;allocation vector harddisk 1
+ALLHD2:		DEFS	255		;allocation vector harddisk 2
+CHK00:		DEFS	16		;check vector 0
+CHK01:		DEFS	16		;check vector 1
+CHK02:		DEFS	16		;check vector 2
+CHK03:		DEFS	16		;check vector 3
+CHKHD1:		DEFS	0		;check vector harddisk 1
+CHKHD2:		DEFS	0		;check vector harddisk 2
+DMAADDR:	DEFW	0080H
 ;
-ENDDAT	EQU	$		;end of data area
-DATSIZ	EQU	$-BEGDAT	;size of data area
+ENDDAT		EQU	$		;end of data area
+DATSIZ		EQU	$-BEGDAT	;size of data area
 ;
-	END			;of BIOS
+		END			;of BIOS
