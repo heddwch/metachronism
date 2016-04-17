@@ -7,9 +7,11 @@
 	MACLIB	STDDEF.INC
 	MACLIB	CONFIG.INC
 	MACLIB	CON.INC
-	MACLIB	CONIO.INC
 	IMPORT	CONIO
-	COM
+	IMPORT	DISK
+	TAIL	BIOSTAIL
+	EXT	ALV0,ALV1,ALV2,ALV3
+	COM	FA00
 
 MSIZE	EQU	64		;cp/m version memory size in kilobytes
 ;
@@ -23,23 +25,6 @@ BIOS	EQU	CCP+1600H	;base of bios
 NSECTS	EQU	(BIOS-CCP)/128	;warm start sector count
 CDISK	EQU	0004H		;current disk number 0=A,...,15=P
 IOBYTE	EQU	0003H		;intel i/o byte
-;
-;	I/O ports
-;
-CONSTA	EQU	0		;console status port
-CONDAT	EQU	1		;console data port
-PRTSTA	EQU	2		;printer status port
-PRTDAT	EQU	3		;printer data port
-AUXDAT	EQU	5		;auxiliary data port
-FDCD	EQU	10		;fdc-port: # of drive
-FDCT	EQU	11		;fdc-port: # of track
-FDCS	EQU	12		;fdc-port: # of sector
-FDCOP	EQU	13		;fdc-port: command
-FDCST	EQU	14		;fdc-port: status
-DMAL	EQU	15		;dma-port: dma address low
-DMAH	EQU	16		;dma-port: dma address high
-;
-	ORG	BIOS		;origin of this program
 ;
 ;	jump vector for individual subroutines
 ;
@@ -55,47 +40,21 @@ WBOOTE: JP	WBOOT		;warm start
 	JP	SELDSK		;select disk
 	JP	SETTRK		;set track number
 	JP	SETSEC		;set sector number
-	JP	SETDMA		;set dma address
-	JP	READ		;read disk
-	JP	WRITE		;write disk
+	JP	_SETDMA		;set dma address
+	JP	_READ		;read disk
+	JP	_WRITE		;write disk
 	JP	LISTST		;return list status
 	JP	SECTRAN		;sector translate
 
-STARTDPH:	REPT	16
-		DEFW	0000H,0000H
-		DEFW	0000H,0000H
-		DEFW	DIRBF,0000H
-		DEFW	0000H,0000H
-		DEFW	0000H,0000H
-		ENDM
+DPH0:		DPH		DPB0, ALV0
+DPH1:		DPH		DPB1, ALV1
+DPH2:		DPH		DPB2, ALV2
+DPH3:		DPH		DPB3, ALV3
 
-;	disk parameter header
-HDB1:	DEFW	0000H,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,HDBLK
-	DEFW	CHKHD1,ALLHD1
-HDB2:	DEFW	0000H,0000H
-	DEFW	0000H,0000H
-	DEFW	DIRBF,HDBLK
-	DEFW	CHKHD2,ALLHD2
-;
-;       disk parameter block for harddisk
-;
-HDBLK:  DEFW    128		;sectors per track
-	DEFB    4		;block shift factor
-	DEFB    15		;block mask
-	DEFB    0		;extent mask
-	DEFW    2039		;disk size-1
-	DEFW    1023		;directory max
-	DEFB    255		;alloc 0
-	DEFB    255		;alloc 1
-	DEFW    0		;check size
-	DEFW    0		;track offset
 ;
 ;	messages
 ;
-SIGNON: DEFM	'64K CP/M Vers. 2.2 (Z80 CBIOS V1.2 for Z80SIM, '
-	DEFM	'Copyright 1988-2007 by Udo Munk)'
+SIGNON: DEFM	'64K CP/M Vers. 2.2'
 	DEFB	13,10,0
 ;
 LDERR:	DEFM	'BIOS: error booting'
@@ -247,94 +206,47 @@ READER:
 ;	move to the track 00 position of current drive
 ;	translate this call into a settrk call with parameter 00
 ;
-HOME:	LD	C,0		;select track 0
-	JP	SETTRK		;we will move to 00 on first read/write
+HOME:		LD	C,0		;select track 0
+		JP	SETTRK		;we will move to 00 on first read/write
 ;
 ;	select disk given by register C
 ;
 SELDSK:
-	RET
+		RET
 ;
 ;	set track given by register c
 ;
-SETTRK: LD	A,C
-	OUT	(FDCT),A
-	RET
+SETTRK:
+		RET
 ;
 ;	set sector given by register c
 ;
-SETSEC: LD	A,C
-	OUT	(FDCS),A
-	RET
+SETSEC:
+		RET
 ;
 ;	translate the sector given by BC using the
 ;	translate table given by DE
 ;
 SECTRAN:
-	LD	A,D		;do we have a translation table?
-	OR	E
-	JP	NZ,SECT1	;yes, translate
-	LD	L,C		;no, return untranslated
-	LD	H,B		;in HL
-	INC	L		;sector no. start with 1
-	RET	NZ
-	INC	H
-	RET
-SECT1:	EX	DE,HL		;HL=.trans
-	ADD	HL,BC		;HL=.trans(sector)
-	LD	L,(HL)		;L = trans(sector)
-	LD	H,0		;HL= trans(sector)
-	RET			;with value in HL
+		RET			;with value in HL
 ;
 ;	set dma address given by registers b and c
 ;
-SETDMA: LD	A,C		;low order address
-	OUT	(DMAL),A
-	LD	A,B		;high order address
-	OUT	(DMAH),A	;in dma
-	RET
+;SETDMA:
+		RET
 ;
 ;	perform read operation
 ;
-READ:	XOR	A		;read command -> A
-	JP	WAITIO		;to perform the actual i/o
+;READ:
+		RET
 ;
 ;	perform a write operation
 ;
-WRITE:	LD	A,1		;write command -> A
-;
-;	enter here from read and write to perform the actual i/o
-;	operation.  return a 00h in register a if the operation completes
-;	properly, and 01h if an error occurs during the read or write
-;
-WAITIO: OUT	(FDCOP),A	;start i/o operation
-	IN	A,(FDCST)	;status of i/o operation -> A
-	RET
-;
-;	the remainder of the CBIOS is reserved uninitialized
-;	data area, and does not need to be a part of the
-;	system memory image (the space must be available,
-;	however, between "begdat" and "enddat").
-;
-;	scratch ram area for BDOS use
-;
-BEGDAT		EQU	$		;beginning of data area
+;WRITE:
+		RET
+
+DPB0:		DEFS	17
+DPB1:		DEFS	17
+DPB2:		DEFS	17
+DPB3:		DEFS	17
 DIRBF:		DEFS	128		;scratch directory area
-ALL00:		DEFS	31		;allocation vector 0
-ALL01:		DEFS	31		;allocation vector 1
-ALL02:		DEFS	31		;allocation vector 2
-ALL03:		DEFS	31		;allocation vector 3
-ALLHD1:		DEFS	255		;allocation vector harddisk 1
-ALLHD2:		DEFS	255		;allocation vector harddisk 2
-CHK00:		DEFS	16		;check vector 0
-CHK01:		DEFS	16		;check vector 1
-CHK02:		DEFS	16		;check vector 2
-CHK03:		DEFS	16		;check vector 3
-CHKHD1:		DEFS	0		;check vector harddisk 1
-CHKHD2:		DEFS	0		;check vector harddisk 2
-DMAADDR:	DEFW	0080H
-;
-ENDDAT		EQU	$		;end of data area
-DATSIZ		EQU	$-BEGDAT	;size of data area
-;
-		END			;of BIOS

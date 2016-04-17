@@ -1,0 +1,12 @@
+		GLOBAL	END,ALV0,ALV1,ALV2,ALV3
+;
+;	the remainder of the CBIOS is reserved uninitialized
+;	data area, and does not need to be a part of the
+;	system memory image (the space must be available,
+;	however, between "begdat" and "enddat").
+;
+END:		EQU	$			;of BIOS
+ALV0:		DEFS	64
+ALV1:		DEFS	64
+ALV2:		DEFS	64
+ALV3:		DEFS	64
