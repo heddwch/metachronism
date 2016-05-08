@@ -140,8 +140,9 @@ impl IoDevice for DataPort {
         let byte = if (self.controller.status.fetch_and(!READY, Ordering::SeqCst) & READY) != 0 {
             {
                 let mut buffer = self.controller.buffer.lock().unwrap();
+                let byte = buffer.bytes[buffer.i as usize];
                 buffer.i = ((buffer.i as usize + 1) & (SECTOR_SIZE - 1) as usize) as u16;
-                buffer.bytes[buffer.i as usize]
+                byte
             }
         } else {
             self.controller.status.fetch_or(ERROR, Ordering::SeqCst);
@@ -227,7 +228,6 @@ impl ConcurrentDevice for DiskController {
             };
             {
                 let mut buffer = self.buffer.lock().unwrap();
-                buffer.i = 0;
                 match parameters.command {
                     NOP => (),
                     SEL_DSK => {
@@ -256,6 +256,7 @@ impl ConcurrentDevice for DiskController {
                         match disks[parameters.disk as usize] {
                             Some(ref disk) => {
                                 let sector = buffer.bytes[0] as u16 | ((buffer.bytes[1] as u16) << 8);
+                                println!("Selecting sector: {}", sector);
                                 if sector < disk.spt {
                                     parameters.sector = sector;
                                 } else {
@@ -299,10 +300,6 @@ impl ConcurrentDevice for DiskController {
 
                     }
                     RESET => {
-                        parameters.disk = 0;
-                        parameters.track = 0;
-                        parameters.sector = 0;
-                        parameters.command = NOP;
                         self.status.fetch_and(!ERROR, Ordering::SeqCst);
                     },
                     OPEN => {
@@ -346,6 +343,7 @@ impl ConcurrentDevice for DiskController {
                         let _ = write!(io::stderr(), "disk: System sent bad command: {:02X}\n", parameters.command);
                     },
                 }
+                buffer.i = 0;
             }
         }
     }

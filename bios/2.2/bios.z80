@@ -38,8 +38,8 @@ WBOOTE: JP	WBOOT		;warm start
 	JP	READER		;reader character in
 	JP	HOME		;move head to home position
 	JP	SELDSK		;select disk
-	JP	SETTRK		;set track number
-	JP	SETSEC		;set sector number
+	JP	_SETTRK		;set track number
+	JP	_SETSEC		;set sector number
 	JP	_SETDMA		;set dma address
 	JP	_READ		;read disk
 	JP	_WRITE		;write disk
@@ -85,32 +85,33 @@ BOOT:   LD	SP,80H		;use space below buffer for stack
 	XOR	A		;zero in the accum
 	LD	(IOBYTE),A	;clear the iobyte
 	LD	(CDISK),A	;select disk zero
-	JP	GOCPM		;initialize and go to cp/m
+;	JP	GOCPM		;initialize and go to cp/m
 ;
 ;	simplest case is to read the disk until all sectors loaded
 ;
 WBOOT:  LD	SP,80H		;use space below buffer for stack
 	LD	C,0		;select disk 0
 	CALL	SELDSK
+	LD	A,(CURDPB)	;low byte of SPT
+	LD	(SPT),A
 	CALL	HOME		;go to track 00
 ;
 	LD	B,NSECTS	;b counts # of sectors to load
 	LD	C,0		;c has the current track number
-	LD	D,2		;d has the next sector to read
-;	note that we begin by reading track 0, sector 2 since sector 1
-;	contains the cold start loader, which is skipped in a warm start
+	LD	DE,1		;DE has the next sector to read
 	LD	HL,CCP		;base of cp/m (initial load point)
 LOAD1:				;load one more sector
 	PUSH	BC		;save sector count, current track
 	PUSH	DE		;save next sector to read
 	PUSH	HL		;save dma address
-	LD	C,D		;get sector address to register c
-	CALL	SETSEC		;set sector address from register c
+	PUSH	DE
+	POP	BC		;get sector address to register BC
+	CALL	_SETSEC		;set sector address from register BC
 	POP	BC		;recall dma address to b,c
 	PUSH	BC		;replace on stack for later recall
-	CALL	SETDMA		;set dma address from b,c
+	CALL	_SETDMA		;set dma address from b,c
 ;	drive set to 0, track set, sector set, dma address set
-	CALL	READ
+	CALL	_READ
 	OR	A		;any errors?
 	JP	Z,LOAD2		;no, continue
 	LD	HL,LDERR	;error, print message
@@ -127,15 +128,21 @@ LOAD2:	POP	HL		;recall dma address
 	DEC	B		;sectors=sectors-1
 	JP	Z,GOCPM		;transfer to cp/m if all have been loaded
 ;	more sectors remain to load, check for track change
-	INC	D
-	LD	A,D		;sector=27?, if so, change tracks
-	CP	27
-	JP	C,LOAD1		;carry generated if sector<27
+	INC	E
+	LD	A,(SPT)		;sector=SPT?, if so, change tracks
+	CP	E
+	JP	NZ,LOAD1	;NZ if sector<SPT
 ;	end of current track, go to next track
+	INC     C
+	LD	A, C
+	CP	2
+	JP	Z, GOCPM	;if track=track+1 == reserved tracks, then done
 	LD	D,1		;begin with first sector of next track
-	INC	C		;track=track+1
 ;	save register state, and change tracks
-	CALL	SETTRK		;track address set from register c
+	PUSH 	BC
+	LD	B,0
+	CALL	_SETTRK		;track address set from register c
+	POP	BC
 	JP	LOAD1		;for another sector
 ;	end of load operation, set parameters and go to cp/m
 GOCPM:
@@ -149,7 +156,7 @@ GOCPM:
 	LD	(6),HL		;address field of jump at 5 to bdos
 ;
 	LD	BC,80H		;default dma address is 80h
-	CALL	SETDMA
+	CALL	_SETDMA
 ;
 	LD	A,(CDISK)	;get current disk number
 	LD	C,A		;send to the ccp
@@ -206,47 +213,89 @@ READER:
 ;	move to the track 00 position of current drive
 ;	translate this call into a settrk call with parameter 00
 ;
-HOME:		LD	C,0		;select track 0
-		JP	SETTRK		;we will move to 00 on first read/write
+HOME:		LD	BC,0		;select track 0
+		JP	_SETTRK		;we will move to 00 on first read/write
 ;
 ;	select disk given by register C
 ;
-SELDSK:
+SELDSK:		LD	A, C
+		SUB	4
+		JP	P, DSK_ERR0
+		PUSH	BC		;save drive number
+		CALL	_SELDSK
+		OR	A
+		JP	NZ, DSK_ERR1
+		LD	HL, DPB0
+		LD	DE, 17
+		LD	A,C
+		OR	A
+		JP	Z,ISDPB0
+DPBOFF:		ADD	HL, DE
+		DEC	C
+		JP	NZ, DPBOFF
+ISDPB0:		PUSH	HL
+		CALL	GETDPB
+		OR	A
+		JP	NZ, DSK_ERR2
+		POP	HL
+		LD	(CURDPB),HL	;save DPB
+		LD	HL,DPH0
+		POP	BC
+		LD	A,C
+		OR	A
+		JP	Z,ISDPH0
+		LD	DE,16
+DPHOFF:		ADD	HL,DE
+		DEC	C
+		JP	NZ,DPHOFF
+ISDPH0:		RET
+
+DSK_ERR0:	LD	A, 0
+		JP	DSK_ERR
+DSK_ERR1:	LD	A, 1
+		JP	DSK_ERR
+DSK_ERR2:	LD	A, 2
+DSK_ERR:
+		OUT	(DEBUG),A
+		LD	HL, 0
 		RET
 ;
 ;	set track given by register c
 ;
-SETTRK:
-		RET
+;SETTRK:
+;		RET
 ;
 ;	set sector given by register c
 ;
-SETSEC:
-		RET
+;SETSEC:
+;		RET
 ;
 ;	translate the sector given by BC using the
 ;	translate table given by DE
 ;
 SECTRAN:
+		EX	DE,HL
 		RET			;with value in HL
 ;
 ;	set dma address given by registers b and c
 ;
 ;SETDMA:
-		RET
+;		RET
 ;
 ;	perform read operation
 ;
 ;READ:
-		RET
+;		RET
 ;
 ;	perform a write operation
 ;
 ;WRITE:
-		RET
+;		RET
 
-DPB0:		DEFS	17
-DPB1:		DEFS	17
-DPB2:		DEFS	17
-DPB3:		DEFS	17
+DPB0:		DEFS	17,0
+DPB1:		DEFS	17,0
+DPB2:		DEFS	17,0
+DPB3:		DEFS	17,0
+CURDPB:		DEFW	0000H
+SPT:		DEFB	00H
 DIRBF:		DEFS	128		;scratch directory area

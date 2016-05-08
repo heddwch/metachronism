@@ -6,7 +6,7 @@
 ;	however, between "begdat" and "enddat").
 ;
 END:		EQU	$			;of BIOS
-ALV0:		DEFS	64
-ALV1:		DEFS	64
-ALV2:		DEFS	64
-ALV3:		DEFS	64
+ALV0:		DEFS	128
+ALV1:		DEFS	128
+ALV2:		DEFS	128
+ALV3:		DEFS	128
